@@ -1,0 +1,130 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Creates the IAM components of the Cloudendure Blueprint automation solution",
+  "Parameters": {
+    "ConfiguratorSqsQueueArn": {
+      "Type": "String",
+      "Description": "Enter the ARN of the Configurator Queue"
+    },
+    "ConfiguratorFunctionArn": {
+      "Type": "String",
+      "Description": "Enter the ARN of the Configurator Function"
+    },
+    "UpdaterFunctionArn": {
+      "Type": "String",
+      "Description": "Enter the ARN of the Updater Function"
+    },
+    "SyncFunctionArn": {
+      "Type": "String",
+      "Description": "Enter the ARN of the Sync Function"
+    },
+    "SyncCloudWatchEventArn": {
+      "Type": "String",
+      "Description": "Enter the ARN of the CloudWatch event that triggers the sync function"
+    },
+    "DynamoDbTableArn": {
+      "Type": "String",
+      "Description": "Enter the ARN of the DynamoDB Table"
+    }
+
+  },
+  "Resources": {
+    "CloudendureOpsRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ec2.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            },
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            },
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Federated": "arn:aws:iam::957236237862:saml-provider/okta"
+              },
+              "Action": "sts:AssumeRoleWithSAML",
+              "Condition": {
+                "StringEquals": {
+                  "SAML:aud": "https://signin.aws.amazon.com/saml"
+                }
+              }
+            },
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "s3.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            },
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Description": "Role for Managing Blueprint automation lambda function",
+        "RoleName": "CloudEndureOpsRole",
+        "ManagedPolicyArns": [
+          { "Ref": "CeAutomationManagementPolicy" }
+        ],
+        "Tags": [
+          {
+            "Key" : "RoleType",
+            "Value" : "dbce"
+          }
+        ]
+      }
+    },
+    "CeAutomationManagementPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "ManagedPolicyName": "CloudEndureBlueprintManagementPolicy",
+        "PolicyDocument":
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Action": "sqs:*",
+                "Effect": "Allow",
+                "Resource": {"Ref" : "ConfiguratorSqsQueueArn"}
+              },
+              {
+                "Action": "lambda:*",
+                "Effect": "Allow",
+                "Resource": [
+                  {"Ref" : "ConfiguratorFunctionArn" },
+                  {"Ref" : "UpdaterFunctionArn" },
+                  {"Ref" : "SyncFunctionArn" }
+                ]
+              },
+              {
+                "Action": "events:*",
+                "Effect": "Allow",
+                "Resource": {"Ref": "SyncCloudWatchEventArn"}
+              },
+              {
+                "Action": "dynamodb:*",
+                "Effect": "Allow",
+                "Resource": {"Ref" : "DynamoDbTableArn"}
+              }
+            ]
+          }
+      }
+    }
+  }
+}

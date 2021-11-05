@@ -1,0 +1,38 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Creates the components of the Cloudendure Blueprint automation solution",
+  "Resources": {
+    "DynamoDBTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "id",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "KeySchema": [
+          {
+            "AttributeName": "id",
+            "KeyType": "HASH"
+          }
+        ],
+        "StreamSpecification": {
+          "StreamViewType": "NEW_AND_OLD_IMAGES"
+        },
+        "TableName": "cedr_automation_blueprints",
+        "Tags": [
+          {
+            "Key" : "RoleType",
+            "Value" : "dbce"
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "DynamoDBTableArn": {"Value": { "Fn::GetAtt" : [ "DynamoDBTable", "Arn" ]}},
+    "DynamoDBTableStreamArn": {"Value": { "Fn::GetAtt" : [ "DynamoDBTable", "StreamArn" ]}}
+  }
+}

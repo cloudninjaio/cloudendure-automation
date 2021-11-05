@@ -1,0 +1,421 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Creates the components of the Cloudendure Blueprint automation solution",
+  "Parameters": {
+    "S3Bucket": {
+      "Type": "String",
+      "Default": "mssql-2019-ent-rtm",
+      "Description": "Enter the name of the S3 bucket containing the function code packages."
+    },
+    "ConfiguratorFunctionPackageKey": {
+      "Type": "String",
+      "Default": "CloudEndure/cloudendure-blueprint-configurator.zip",
+      "Description": "Enter the key of the configurator function code package."
+    },
+    "UpdaterFunctionPackageKey": {
+      "Type": "String",
+      "Default": "CloudEndure/cloudendure-blueprint-updater.zip",
+      "Description": "Enter the key of the updater function code package."
+    },
+    "SyncFunctionPackageKey": {
+      "Type": "String",
+      "Default": "CloudEndure/cloudendure-blueprint-sync.zip",
+      "Description": "Enter the key of the sync function code package."
+    },
+    "userApiToken": {
+      "Type": "String",
+      "Description": "Enter the CloudEndure user api token"
+    },
+    "DynamoDbTableArn": {
+      "Type": "String",
+      "Description": "Enter the ARN of the DynamoDB Table"
+    },
+    "DynamoDbTableStreamArn": {
+      "Type": "String",
+      "Description": "Enter the stream ARN of the DynamoDB Table"
+    }
+  },
+  "Resources": {
+    "ConfiguratorFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": { "Ref" : "S3Bucket" },
+          "S3Key": { "Ref" : "ConfiguratorFunctionPackageKey" }
+        },
+        "Description": "Test",
+        "FunctionName": "cloudendure-blueprint-configurator",
+        "Handler": "function.configurator",
+        "MemorySize": 128,
+        "PackageType": "Zip",
+        "Environment": {
+          "Variables" : {
+            "userApiToken" : { "Ref" : "userApiToken" }
+          }
+        },
+        "Role": {
+          "Fn::GetAtt": [
+            "CeAutomationConfiguratorRole",
+            "Arn"
+          ]
+        },
+        "Runtime": "python3.8",
+        "Timeout": 20,
+        "Tags": [
+          {
+            "Key" : "RoleType",
+            "Value" : "dbce"
+          }
+        ]
+      }
+    },
+    "SyncFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": { "Ref" : "S3Bucket" },
+          "S3Key": { "Ref" : "SyncFunctionPackageKey" }
+        },
+        "Description": "",
+        "FunctionName": "cloudendure-blueprint-sync",
+        "Handler": "function.check_blueprint",
+        "MemorySize": 128,
+        "Environment": {
+          "Variables" : {
+            "userApiToken" : { "Ref" : "userApiToken" },
+            "QueueURL" : {"Ref": "ConfiguratorSqsQueue" }
+          }
+        },
+        "PackageType": "Zip",
+        "Role": {
+          "Fn::GetAtt": [
+            "CeAutomationSyncRole",
+            "Arn"
+          ]
+        },
+        "Runtime": "python3.8",
+        "Timeout": 30,
+        "Tags": [
+          {
+            "Key" : "RoleType",
+            "Value" : "dbce"
+          }
+        ]
+      }
+    },
+    "UpdaterFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": { "Ref" : "S3Bucket" },
+          "S3Key": { "Ref" : "UpdaterFunctionPackageKey" }
+        },
+        "Description": "",
+        "FunctionName": "cloudendure-blueprint-updater",
+        "Handler": "function.updater",
+        "MemorySize": 128,
+        "PackageType": "Zip",
+        "Environment": {
+          "Variables" : {
+            "QueueURL" : {"Ref": "ConfiguratorSqsQueue" }
+          }
+        },
+        "Role": {
+          "Fn::GetAtt": [
+            "CeAutomationUpdaterRole",
+            "Arn"
+          ]
+        },
+        "Runtime": "python3.8",
+        "Timeout": 3,
+        "Tags": [
+          {
+            "Key" : "RoleType",
+            "Value" : "dbce"
+          }
+        ]
+      }
+    },
+    "ConfiguratorSqsQueue": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "DelaySeconds": 0,
+        "MaximumMessageSize": 262144,
+        "MessageRetentionPeriod": 345600,
+        "QueueName": "CedrAutomationConfiguratorQueue",
+        "VisibilityTimeout": 30,
+        "KmsMasterKeyId": "alias/aws/sqs",
+        "Tags": [
+          {
+            "Key" : "RoleType",
+            "Value" : "dbce"
+          }
+        ]
+      }
+    },
+    "SyncCloudwatchEvent": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "Description": "Schedule for cloudendure-blueprint-sync function",
+        "Name": "CeAutomationSyncScheduleEvent",
+        "ScheduleExpression": "rate(1 day)",
+        "State": "ENABLED"
+      }
+    },
+    "CeAutomationConfiguratorRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Description": "Role for CeAutomationConfigurator lambda function",
+        "Policies": [
+          {
+            "PolicyName": "root",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Action": [
+                    "sqs:ReceiveMessage",
+                    "sqs:DeleteMessage",
+                    "sqs:GetQueueAttributes"
+                  ],
+                  "Effect": "Allow",
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "ConfiguratorSqsQueue",
+                      "Arn"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "RoleName": "CeAutomationConfiguratorRole",
+        "Tags": [
+          {
+            "Key" : "RoleType",
+            "Value" : "dbce"
+          }
+        ]
+      }
+    },
+    "CeAutomationSyncRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Description": "Role for CeAutomationSync lambda function",
+        "Policies": [
+          {
+            "PolicyName": "root",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "dynamodb:*"
+                  ],
+                  "Resource": {
+                    "Ref": "DynamoDbTableArn"
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "sqs:SendMessage"
+                  ],
+                  "Resource": { "Fn::GetAtt" : [ "ConfiguratorSqsQueue", "Arn" ] }
+
+                }
+              ]
+            }
+          }
+        ],
+        "RoleName": "CeAutomationSyncRole",
+        "Tags": [
+          {
+            "Key" : "RoleType",
+            "Value" : "dbce"
+          }
+        ]
+      }
+    },
+    "CeAutomationUpdaterRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Description": "Role for CeAutomationUpdater lambda function",
+        "Policies": [
+          {
+            "PolicyName": "root",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "dynamodb:*"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "sqs:SendMessage"
+                  ],
+                  "Resource": { "Fn::GetAtt" : [ "ConfiguratorSqsQueue", "Arn" ] }
+
+                }
+
+              ]
+            }
+          }
+        ],
+        "RoleName": "CeAutomationUpdaterRole",
+        "Tags": [
+          {
+            "Key" : "RoleType",
+            "Value" : "dbce"
+          }
+        ]
+      }
+    },
+    "CeAutomationConfiguratorTrigger": {
+      "Type": "AWS::Lambda::EventSourceMapping",
+      "Properties": {
+        "BatchSize": 5,
+        "Enabled": true,
+        "EventSourceArn": {
+          "Fn::GetAtt": [
+            "ConfiguratorSqsQueue",
+            "Arn"
+          ]
+        },
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "ConfiguratorFunction",
+            "Arn"
+          ]
+        }
+      }
+    },
+    "CeAutomationUpdateTrigger": {
+      "Type": "AWS::Lambda::EventSourceMapping",
+      "Properties": {
+        "StartingPosition": "TRIM_HORIZON",
+        "EventSourceArn": {"Ref": "DynamoDbTableStreamArn"},
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "UpdaterFunction",
+            "Arn"
+          ]
+        }
+      }
+    },
+    "CeAutomationSyncRule": {
+      "Properties": {
+        "ScheduleExpression": "rate(1 day)",
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::GetAtt": [
+                "SyncFunction",
+                "Arn"
+              ]
+            },
+            "Id": "1"
+          }
+        ]
+      },
+      "Type": "AWS::Events::Rule"
+    },
+    "CeAutomationSyncRulePermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "SyncFunction",
+            "Arn"
+          ]
+        },
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "CeAutomationSyncRule",
+            "Arn"
+          ]
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "ConfiguratorFunctionArn": {"Value": { "Fn::GetAtt" : [ "ConfiguratorFunction", "Arn" ]}},
+    "SyncFunctionArn": {"Value": { "Fn::GetAtt" : [ "SyncFunction", "Arn" ] }},
+    "UpdaterFunctionArn": {"Value": { "Fn::GetAtt" : [ "UpdaterFunction", "Arn" ] }},
+    "ConfiguratorSqsQueueUrl": {"Value": { "Ref" :"ConfiguratorSqsQueue"}},
+    "ConfiguratorSqsQueueArn": {"Value": { "Fn::GetAtt" : [ "ConfiguratorSqsQueue", "Arn" ] }},
+    "SyncCloudwatchEventArn": {"Value": { "Fn::GetAtt" : [ "SyncCloudwatchEvent", "Arn" ] }}
+  }
+}

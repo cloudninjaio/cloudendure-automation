@@ -1,0 +1,115 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "This template deploys all components of the blueprint automation solution",
+  "Parameters": {
+    "DynamoDbTemplateURL": {
+      "Type": "String",
+      "Description": ""
+    },
+    "FunctionTemplateURL": {
+      "Type": "String",
+      "Description": ""
+    },
+    "IamManagementTemplateURL": {
+      "Type": "String",
+      "Description": ""
+    },
+    "S3Bucket": {
+      "Type": "String",
+      "Default": "mssql-2019-ent-rtm",
+      "Description": "Enter the name of the S3 bucket containing the function code packages."
+    },
+    "S3Prefix": {
+      "Type": "String",
+      "Default": "mssql-2019-ent-rtm",
+      "Description": "Enter the prefix folder of the function objects in S3 with a trailing slash (e.g. 'CloudEndure/)"
+    },
+    "userApiToken": {
+      "Type": "String",
+      "Description": "Enter the CloudEndure user api token"
+    }
+  },
+  "Resources": {
+    "BlueprintDbTable": {
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": {"Ref": "DynamoDbTemplateURL"}}
+    },
+    "AutomationFunctions": {
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": {
+          "Ref": "FunctionTemplateURL"
+        },
+        "Parameters": {
+          "S3Bucket": {
+            "Ref": "S3Bucket"
+          },
+          "ConfiguratorFunctionPackageKey": { "Fn::Join" : [ "",[{"Ref": "S3Prefix"},"cloudendure-blueprint-configurator.zip"]]},
+          "UpdaterFunctionPackageKey": { "Fn::Join" : [ "",[{"Ref": "S3Prefix"},"cloudendure-blueprint-updater.zip"]]},
+          "SyncFunctionPackageKey": { "Fn::Join" : [ "",[{"Ref": "S3Prefix"},"cloudendure-blueprint-sync.zip"]]},
+          "userApiToken": {
+            "Ref": "userApiToken"
+          },
+          "DynamoDbTableArn": {
+            "Fn::GetAtt": [
+              "BlueprintDbTable",
+              "Outputs.DynamoDBTableArn"
+            ]
+          },
+          "DynamoDbTableStreamArn": {
+            "Fn::GetAtt": [
+              "BlueprintDbTable",
+              "Outputs.DynamoDBTableStreamArn"
+            ]
+          }
+        }
+      }
+    },
+    "ManagementStack": {
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": {"Ref": "IamManagementTemplateURL"},
+        "Parameters": {
+          "ConfiguratorSqsQueueArn": {
+            "Fn::GetAtt": [
+              "AutomationFunctions",
+              "Outputs.ConfiguratorSqsQueueArn"
+            ]
+          },
+          "ConfiguratorFunctionArn": {
+            "Fn::GetAtt": [
+              "AutomationFunctions",
+              "Outputs.ConfiguratorFunctionArn"
+            ]
+          },
+          "UpdaterFunctionArn": {
+            "Fn::GetAtt": [
+              "AutomationFunctions",
+              "Outputs.UpdaterFunctionArn"
+            ]
+          },
+          "SyncFunctionArn": {
+            "Fn::GetAtt": [
+              "AutomationFunctions",
+              "Outputs.SyncFunctionArn"
+            ]
+          },
+          "SyncCloudWatchEventArn": {
+            "Fn::GetAtt": [
+              "AutomationFunctions",
+              "Outputs.SyncCloudwatchEventArn"
+            ]
+          },
+          "DynamoDbTableArn": {
+            "Fn::GetAtt": [
+              "BlueprintDbTable",
+              "Outputs.DynamoDBTableArn"
+            ]
+          }
+        }
+      }
+    }
+
+  }
+}
